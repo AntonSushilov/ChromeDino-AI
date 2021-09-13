@@ -13,14 +13,21 @@ SCREEN = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 RUNNING = [pygame.image.load(os.path.join("Assets/Dino", "DinoRun1.png")),
            pygame.image.load(os.path.join("Assets/Dino", "DinoRun2.png"))]
 
+DUCKING = [pygame.image.load(os.path.join("Assets/Dino", "DinoDuck1.png")),
+           pygame.image.load(os.path.join("Assets/Dino", "DinoDuck2.png"))]
+
 JUMPING = pygame.image.load(os.path.join("Assets/Dino", "DinoJump.png"))
 
 SMALL_CACTUS = [pygame.image.load(os.path.join("Assets/Cactus", "SmallCactus1.png")),
                 pygame.image.load(os.path.join("Assets/Cactus", "SmallCactus2.png")),
                 pygame.image.load(os.path.join("Assets/Cactus", "SmallCactus3.png"))]
+
 LARGE_CACTUS = [pygame.image.load(os.path.join("Assets/Cactus", "LargeCactus1.png")),
                 pygame.image.load(os.path.join("Assets/Cactus", "LargeCactus2.png")),
                 pygame.image.load(os.path.join("Assets/Cactus", "LargeCactus3.png"))]
+
+BIRD = [pygame.image.load(os.path.join("Assets/Bird", "Bird1.png")),
+        pygame.image.load(os.path.join("Assets/Bird", "Bird2.png"))]
 
 
 BG = pygame.image.load(os.path.join("Assets/Other", "Track.png"))
@@ -31,12 +38,16 @@ FONT = pygame.font.Font('freesansbold.ttf', 20)
 class Dinosaur:
     X_POS = 80
     Y_POS = 310
+    Y_POS_DUCK = 340
     JUMP_VEL = 8.5
 
     def __init__(self, img=RUNNING[0]):
         self.image = img
+
         self.dino_run = True
         self.dino_jump = False
+        self.dino_duck = False
+
         self.jump_vel = self.JUMP_VEL
         self.rect = pygame.Rect(self.X_POS, self.Y_POS, img.get_width(), img.get_height())
         self.color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
@@ -45,8 +56,11 @@ class Dinosaur:
     def update(self):
         if self.dino_run:
             self.run()
+        if self.dino_duck:
+            self.duck()
         if self.dino_jump:
             self.jump()
+
         if self.step_index >= 10:
             self.step_index = 0
 
@@ -59,6 +73,12 @@ class Dinosaur:
             self.dino_jump = False
             self.dino_run = True
             self.jump_vel = self.JUMP_VEL
+
+    def duck(self):
+        self.image = DUCKING[self.step_index // 5]
+        self.rect.x = self.X_POS
+        self.rect.y = self.Y_POS_DUCK
+        self.step_index += 1
 
     def run(self):
         self.image = RUNNING[self.step_index // 5]
@@ -95,6 +115,20 @@ class LargeCactus(Obstacle):
     def __init__(self, image, number_of_cacti):
         super().__init__(image, number_of_cacti)
         self.rect.y = 300
+
+class Bird(Obstacle):
+    def __init__(self, image):
+        self.type = 0
+        super().__init__(image, self.type)
+        self.rect.y = 250
+        self.index = 0
+
+    def draw(self, SCREEN):
+        if self.index >= 9:
+            self.index = 0
+        SCREEN.blit(self.image[self.index//5], self.rect)
+        self.index += 1
+
 
 def remove(index):
     dinosaurs.pop(index)
@@ -145,11 +179,13 @@ def main():
             break
 
         if len(obstacles) == 0:
-            rand_int = random.randint(0, 1)
+            rand_int = random.randint(0, 2)
             if rand_int == 0:
                 obstacles.append(SmallCactus(SMALL_CACTUS, random.randint(0, 2)))
             elif rand_int == 1:
                 obstacles.append(LargeCactus(LARGE_CACTUS, random.randint(0, 2)))
+            elif random.randint(0, 2) == 2:
+                obstacles.append(Bird(BIRD))
 
         for obstacle in obstacles:
             obstacle.draw(SCREEN)
@@ -158,12 +194,22 @@ def main():
                 if dinosaur.rect.colliderect(obstacle.rect):
                     remove(i)
 
-        user_input = pygame.key.get_pressed()
+        userInput = pygame.key.get_pressed()
 
         for i, dinosaur in enumerate(dinosaurs):
-            if user_input[pygame.K_SPACE]:
-                dinosaur.dino_jump = True
+            if userInput[pygame.K_SPACE] and not dinosaur.dino_jump:
+                dinosaur.dino_duck = False
                 dinosaur.dino_run = False
+                dinosaur.dino_jump = True
+            elif userInput[pygame.K_LSHIFT] and not dinosaur.dino_jump:
+                dinosaur.dino_duck = True
+                dinosaur.dino_run = False
+                dinosaur.dino_jump = False
+            elif not (dinosaur.dino_jump or userInput[pygame.K_LSHIFT]):
+                dinosaur.dino_duck = False
+                dinosaur.dino_run = True
+                dinosaur.dino_jump = False
+
 
         score()
         background()
