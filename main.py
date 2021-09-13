@@ -2,6 +2,8 @@ import pygame
 import os
 import random
 import sys
+import neat
+import math
 
 pygame.init()
 
@@ -29,7 +31,6 @@ LARGE_CACTUS = [pygame.image.load(os.path.join("Assets/Cactus", "LargeCactus1.pn
 BIRD = [pygame.image.load(os.path.join("Assets/Bird", "Bird1.png")),
         pygame.image.load(os.path.join("Assets/Bird", "Bird2.png"))]
 
-
 BG = pygame.image.load(os.path.join("Assets/Other", "Track.png"))
 
 FONT = pygame.font.Font('freesansbold.ttf', 20)
@@ -39,7 +40,7 @@ class Dinosaur:
     X_POS = 80
     Y_POS = 310
     Y_POS_DUCK = 340
-    JUMP_VEL = 8.5
+    JUMP_VEL = 8.6
 
     def __init__(self, img=RUNNING[0]):
         self.image = img
@@ -89,6 +90,7 @@ class Dinosaur:
     def draw(self, SCREEN):
         SCREEN.blit(self.image, (self.rect.x, self.rect.y))
 
+
 class Obstacle:
     def __init__(self, image, number_of_cacti):
         self.image = image
@@ -116,6 +118,7 @@ class LargeCactus(Obstacle):
         super().__init__(image, number_of_cacti)
         self.rect.y = 300
 
+
 class Bird(Obstacle):
     def __init__(self, image):
         self.type = 0
@@ -126,25 +129,42 @@ class Bird(Obstacle):
     def draw(self, SCREEN):
         if self.index >= 9:
             self.index = 0
-        SCREEN.blit(self.image[self.index//5], self.rect)
+        SCREEN.blit(self.image[self.index // 5], self.rect)
         self.index += 1
 
 
 def remove(index):
     dinosaurs.pop(index)
+    ge.pop(index)
+    nets.pop(index)
 
 
-def main():
-    global game_speed, x_pos_bg, y_pos_bg, obstacles, dinosaurs, points
+def distance(pos_a, pos_b):
+    dx = pos_a[0] - pos_b[0]
+    dy = pos_a[1] - pos_b[1]
+    return math.sqrt(dx ** 2 + dy ** 2)
+
+
+def eval_genomes(genomes, config):
+    global game_speed, x_pos_bg, y_pos_bg, obstacles, dinosaurs, ge, nets, points
     clock = pygame.time.Clock()
     points = 0
 
     obstacles = []
-    dinosaurs = [Dinosaur()]
+    dinosaurs = []
+    ge = []
+    nets = []
 
     x_pos_bg = 0
     y_pos_bg = 380
     game_speed = 20
+
+    for genome_id, genome in genomes:
+        dinosaurs.append(Dinosaur())
+        ge.append(genome)
+        net = neat.nn.FeedForwardNetwork.create(genome, config)
+        nets.append(net)
+        genome.fitness = 0
 
     def score():
         global points, game_speed
@@ -153,6 +173,16 @@ def main():
             game_speed += 1
         text = FONT.render(f'Points:  {str(points)}', True, (0, 0, 0))
         SCREEN.blit(text, (950, 50))
+
+    def statistics():
+        global dinosaurs, game_speed, ge
+        text_1 = FONT.render(f'Dinosaurs Alive:  {str(len(dinosaurs))}', True, (0, 0, 0))
+        text_2 = FONT.render(f'Generation:  {pop.generation + 1}', True, (0, 0, 0))
+        text_3 = FONT.render(f'Game Speed:  {str(game_speed)}', True, (0, 0, 0))
+
+        SCREEN.blit(text_1, (50, 450))
+        SCREEN.blit(text_2, (50, 480))
+        SCREEN.blit(text_3, (50, 510))
 
     def background():
         global x_pos_bg, y_pos_bg
@@ -169,7 +199,7 @@ def main():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-        SCREEN.fill((255,255,255))
+        SCREEN.fill((255, 255, 255))
 
         for dinosaur in dinosaurs:
             dinosaur.update()
@@ -184,7 +214,7 @@ def main():
                 obstacles.append(SmallCactus(SMALL_CACTUS, random.randint(0, 2)))
             elif rand_int == 1:
                 obstacles.append(LargeCactus(LARGE_CACTUS, random.randint(0, 2)))
-            elif random.randint(0, 2) == 2:
+            elif rand_int == 2:
                 obstacles.append(Bird(BIRD))
 
         for obstacle in obstacles:
@@ -192,28 +222,51 @@ def main():
             obstacle.update()
             for i, dinosaur in enumerate(dinosaurs):
                 if dinosaur.rect.colliderect(obstacle.rect):
+                    ge[i].fitness -= 1
                     remove(i)
 
         userInput = pygame.key.get_pressed()
 
         for i, dinosaur in enumerate(dinosaurs):
-            if userInput[pygame.K_SPACE] and not dinosaur.dino_jump:
+            output = nets[i].activate((dinosaur.rect.y,
+                                       distance((dinosaur.rect.x, dinosaur.rect.y),
+                                                obstacle.rect.midtop)))
+            if output[0] > 0.5 and not dinosaur.dino_jump:
                 dinosaur.dino_duck = False
                 dinosaur.dino_run = False
                 dinosaur.dino_jump = True
-            elif userInput[pygame.K_LSHIFT] and not dinosaur.dino_jump:
+            elif output[0] > 0.5 and not dinosaur.dino_jump:
                 dinosaur.dino_duck = True
                 dinosaur.dino_run = False
                 dinosaur.dino_jump = False
-            elif not (dinosaur.dino_jump or userInput[pygame.K_LSHIFT]):
+            elif not dinosaur.dino_jump:
                 dinosaur.dino_duck = False
                 dinosaur.dino_run = True
                 dinosaur.dino_jump = False
 
-
+        statistics()
         score()
         background()
         clock.tick(30)
         pygame.display.update()
 
-main()
+
+# Setup the NEAT Neural Network
+def run(config_path):
+    global pop
+    config = neat.config.Config(
+        neat.DefaultGenome,
+        neat.DefaultReproduction,
+        neat.DefaultSpeciesSet,
+        neat.DefaultStagnation,
+        config_path
+    )
+
+    pop = neat.Population(config)
+    pop.run(eval_genomes, 50)
+
+
+if __name__ == '__main__':
+    local_dir = os.path.dirname(__file__)
+    config_path = os.path.join(local_dir, 'config.txt')
+    run(config_path)
